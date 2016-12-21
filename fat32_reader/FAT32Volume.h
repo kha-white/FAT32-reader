@@ -1,8 +1,10 @@
 #pragma once
 #include <iostream>
+#include <iomanip>
 #include <string>
 #include <vector>
 #include <sstream>
+#include <ctime>
 #include <Windows.h>
 
 class FAT32Volume
@@ -15,19 +17,25 @@ public:
         BYTE shortFilename[8];
         BYTE shortFileExt[3];
         BYTE fileAttributes;
+        tm created;
+        tm lastModified;
         UINT32 firstCluster;
         UINT32 size;
         std::wstring filename;
     };
 
+
+    std::pair<int, int> clusterToSectors(int cluster);
+    DirectoryEntry findFile(std::vector<std::wstring> path);
+    void printListOfClusters(DirectoryEntry de);
+    void printFile(DirectoryEntry de);
+
+private:
     struct LFNEntry {
         BYTE sequenceNumber;
         std::wstring name;
     };
 
-    DirectoryEntry findFile(std::vector<std::wstring> path);
-
-private:
     DirectoryEntry findFile(std::vector<std::wstring> path,
         UINT32 directoryCluster, std::wstring longName, bool longNameSet);
 
@@ -77,6 +85,33 @@ private:
             if (lowercaseExt) b = tolower(b);
             value.filename.push_back(b);
         }
+
+
+        UINT16 ui16;
+        readFromBuffer(offset + 0x0E, ui16);
+        value.created.tm_hour = (ui16 & 0xF800) >> 11;
+        value.created.tm_min = (ui16 & 0x07E0) >> 5;
+        value.created.tm_sec = (ui16 & 0x1F) << 1;
+        readFromBuffer(offset + 0x10, ui16);
+        value.created.tm_year = ((ui16 & 0xFE00) >> 9) + 80;
+        value.created.tm_mon = ((ui16 & 0x01E0) >> 5) - 1;
+        value.created.tm_mday = (ui16 & 0x1F);
+        value.created.tm_wday = 0;
+        value.created.tm_isdst = 0;
+        value.created.tm_yday = 0;
+
+        readFromBuffer(offset + 0x16, ui16);
+        value.lastModified.tm_hour = (ui16 & 0xF800) >> 11;
+        value.lastModified.tm_min = (ui16 & 0x07E0) >> 5;
+        value.lastModified.tm_sec = (ui16 & 0x1F) << 1;
+        readFromBuffer(offset + 0x18, ui16);
+        value.lastModified.tm_year = ((ui16 & 0xFE00) >> 9) + 80;
+        value.lastModified.tm_mon = ((ui16 & 0x01E0) >> 5) - 1;
+        value.lastModified.tm_mday = (ui16 & 0x1F);
+        value.lastModified.tm_wday = 0;
+        value.lastModified.tm_isdst = 0;
+        value.lastModified.tm_yday = 0;
+
     }
 
     template<>

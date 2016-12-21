@@ -1,5 +1,5 @@
 #include "FAT32Volume.h"
-
+#include <conio.h>
 
 FAT32Volume::FAT32Volume(std::wstring name) {
     std::wstring volume(L"\\\\.\\");
@@ -49,6 +49,13 @@ void FAT32Volume::readSector(int sector, int bufferOffset) {
     readBytes(sector*sectorSize, sectorSize, bufferOffset);
 }
 
+std::pair<int, int> FAT32Volume::clusterToSectors(int cluster) {
+    return {
+        reservedSectors + 2 * sectorsPerFAT + (cluster - rootCluster)*sectorsPerCluster,
+        reservedSectors + 2 * sectorsPerFAT + (cluster - rootCluster)*sectorsPerCluster + sectorsPerCluster - 1
+    };
+}
+
 void FAT32Volume::readCluster(int cluster) {
     if (cluster >= rootCluster) {
         for (int i = 0; i < sectorsPerCluster; i++) {
@@ -61,7 +68,6 @@ void FAT32Volume::readCluster(int cluster) {
 void FAT32Volume::readSectorWithFatIndex(int index) {
     readSector(reservedSectors + index * 4 / sectorSize);
 }
-
 
 FAT32Volume::DirectoryEntry FAT32Volume::findFile(std::vector<std::wstring> path,
     UINT32 directoryCluster, std::wstring longName, bool longNameSet) {
@@ -144,4 +150,69 @@ FAT32Volume::DirectoryEntry FAT32Volume::findFile(std::vector<std::wstring> path
 
 FAT32Volume::DirectoryEntry FAT32Volume::findFile(std::vector<std::wstring> path) {
     return findFile(path, rootCluster, L"", false);
+}
+
+void FAT32Volume::printListOfClusters(DirectoryEntry de) {
+    UINT32 nextCluster = de.firstCluster;
+    std::cout << "\nCLUSTER\tSECTORS\n";
+    while (nextCluster != 0x0FFFFFFF) {
+        auto sectors = clusterToSectors(nextCluster);
+        std::cout << nextCluster << "\t" << sectors.first << "-" << sectors.second << "\n";
+        readSectorWithFatIndex(nextCluster);
+        readFromBuffer((nextCluster * 4) % sectorSize, nextCluster);
+    }
+}
+
+void FAT32Volume::printFile(DirectoryEntry de) {
+    std::ios::fmtflags flags(std::cout.flags());
+    UINT32 cluster = de.firstCluster;
+    int bytes = 0;
+    while (cluster != 0x0FFFFFFF) {
+        readCluster(cluster);
+
+        if (bytes > 0) {
+            char c = _getch();
+            if (c == 'q') break;
+        }
+
+        auto sectors = clusterToSectors(cluster);
+        std::cout.flags(flags);
+        std::cout << "\ncluster " << cluster << " (sectors " << sectors.first << "-" << sectors.second << ")\n";
+
+        int i = 0;
+        bool end = false;
+        std::vector<char> chars;
+        for (BYTE b : buffer) {
+            if (end) {
+                std::cout << "  ";
+            }
+            else {
+                std::cout << std::setw(2) << std::setfill('0') << std::hex << std::uppercase << (int)b;
+
+                chars.push_back(b);
+                bytes++;
+            }
+
+            if (bytes == de.size) {
+                end = true;
+            }
+
+            if ((i + 1) % 16 == 0) {
+                std::cout.flags(flags);
+                std::cout << " | ";
+                for (char b : chars) {
+                    std::cout << (b >= 0x20 ? b : '.');
+                }
+                std::cout << "\n";
+                chars.clear();
+                if (end) break;
+            }
+            else std::cout << " ";
+            i++;
+        }
+
+        readSectorWithFatIndex(cluster);
+        readFromBuffer((cluster * 4) % sectorSize, cluster);
+    }
+    std::cout.flags(flags);
 }
